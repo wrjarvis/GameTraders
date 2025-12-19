@@ -1,0 +1,1438 @@
+{% extends "base.html" %}
+
+{% block title %}Trading Dashboard - {{ game.name }}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <div class="game-info-header">
+            <h1>{{ game.name }}</h1>
+            <span class="status-badge status-{{ game.status }}">{{ game.status|title }}</span>
+        </div>
+        <div class="participant-info">
+            <span class="participant-name">{{ participant.name }}</span>
+            <span class="role-badge role-{{ participant.role }}">{{ participant.role|title }}</span>
+        </div>
+    </div>
+    
+    <!-- Main Navigation Tabs -->
+    <div class="main-nav-tabs">
+        <button class="main-tab-btn active" data-tab="trading-view">📊 Trading</button>
+        <button class="main-tab-btn" data-tab="analytics-view">📈 Market Analytics</button>
+    </div>
+    
+    <!-- Trading View -->
+    <div class="main-tab-content active" id="trading-view">
+    <div class="dashboard-grid">
+        <!-- Portfolio Section -->
+        <section class="dashboard-card portfolio-card">
+            <h2>💼 Your Portfolio</h2>
+            <div class="portfolio-summary">
+                <div class="cash-display">
+                    <span class="label">Cash Balance:</span>
+                    <span class="value cash-value" id="cash-value">${{ "%.2f"|format(participant.cash) }}</span>
+                </div>
+            </div>
+            
+            <h3>Your Holdings</h3>
+            <table class="holdings-table">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Shares</th>
+                    </tr>
+                </thead>
+                <tbody id="holdings-body">
+                    {% for player in player_names %}
+                    <tr>
+                        <td>{{ player }}</td>
+                        <td>{{ holdings.get(player, 0) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        
+        <!-- Place Order Section -->
+        <section class="dashboard-card order-card">
+            <h2>📝 Place Order</h2>
+            <form id="order-form" class="order-form">
+                <div class="form-group">
+                    <label for="order-type">Order Type</label>
+                    <select id="order-type" required>
+                        <option value="buy">Buy (I want to acquire shares)</option>
+                        <option value="sell">Sell (I want to sell shares)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="order-player">Player</label>
+                    <select id="order-player" required>
+                        {% for player in player_names %}
+                        <option value="{{ player }}">{{ player }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="order-shares">Shares</label>
+                        <input type="number" id="order-shares" min="1" value="1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="order-price">Price per Share</label>
+                        <input type="number" id="order-price" min="0.01" step="0.01" value="10.00" required>
+                    </div>
+                </div>
+                
+                <div class="order-summary">
+                    <span>Total: $<span id="order-total">10.00</span></span>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Place Order</button>
+            </form>
+            <div id="order-message" class="message"></div>
+        </section>
+        
+        <!-- Market Orders Section -->
+        <section class="dashboard-card market-card">
+            <h2>📊 Market Orders</h2>
+            
+            <div class="market-tabs">
+                <button class="tab-btn active" data-tab="buy-orders">Buy Orders</button>
+                <button class="tab-btn" data-tab="sell-orders">Sell Orders</button>
+            </div>
+            
+            <div class="tab-content active" id="buy-orders">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+                    <p class="tab-description" style="margin: 0;">People wanting to <strong>buy</strong> shares - you can sell to them</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="buy-player-filter" class="player-filter" onchange="filterOrders('buy')">
+                            <option value="">All Players</option>
+                        </select>
+                        <button class="btn btn-small btn-cancel" onclick="cancelAllOrders('buy')">Cancel All My Buy Orders</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Player</th>
+                                <th>Shares</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="buy-orders-body">
+                            {% for order in buy_orders %}
+                            <tr class="{% if order.participant_id == participant.id %}my-order{% endif %}">
+                                <td>{{ order.player_name }}</td>
+                                <td>{{ order.shares }}</td>
+                                <td>${{ "%.2f"|format(order.price) }}</td>
+                                <td>${{ "%.2f"|format(order.price * order.shares) }}</td>
+                                <td>
+                                    {% if order.participant_id == participant.id %}
+                                    <button class="btn btn-small btn-cancel" onclick="cancelOrder({{ order.id }})">Cancel</button>
+                                    {% else %}
+                                    <button class="btn btn-small btn-execute" onclick="executeOrder({{ order.id }})">Sell to Buyer</button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="sell-orders">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+                    <p class="tab-description" style="margin: 0;">People wanting to <strong>sell</strong> shares - you can buy from them</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="sell-player-filter" class="player-filter" onchange="filterOrders('sell')">
+                            <option value="">All Players</option>
+                        </select>
+                        <button class="btn btn-small btn-cancel" onclick="cancelAllOrders('sell')">Cancel All My Sell Orders</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Player</th>
+                                <th>Shares</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sell-orders-body">
+                            {% for order in sell_orders %}
+                            <tr class="{% if order.participant_id == participant.id %}my-order{% endif %}">
+                                <td>{{ order.player_name }}</td>
+                                <td>{{ order.shares }}</td>
+                                <td>${{ "%.2f"|format(order.price) }}</td>
+                                <td>${{ "%.2f"|format(order.price * order.shares) }}</td>
+                                <td>
+                                    {% if order.participant_id == participant.id %}
+                                    <button class="btn btn-small btn-cancel" onclick="cancelOrder({{ order.id }})">Cancel</button>
+                                    {% else %}
+                                    <button class="btn btn-small btn-execute" onclick="executeOrder({{ order.id }})">Buy from Seller</button>
+                                    {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- Recent Transactions -->
+        <section class="dashboard-card transactions-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="margin: 0;">📜 Recent Transactions</h2>
+                <div class="transaction-filter">
+                    <button class="filter-btn active" data-filter="all" onclick="filterTransactions('all')">All Transactions</button>
+                    <button class="filter-btn" data-filter="my" onclick="filterTransactions('my')">My Transactions</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table class="transactions-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Player</th>
+                            <th>Shares</th>
+                            <th>Price</th>
+                            <th>Total</th>
+                            <th id="transaction-type-header" style="display: none;">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-body">
+                        {% for tx in recent_transactions %}
+                        <tr>
+                            <td>{{ tx.timestamp.strftime('%H:%M:%S') if tx.timestamp else '-' }}</td>
+                            <td>{{ tx.player_name }}</td>
+                            <td>{{ tx.shares }}</td>
+                            <td>${{ "%.2f"|format(tx.price) }}</td>
+                            <td>${{ "%.2f"|format(tx.price * tx.shares) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    
+    <!-- End Game Section - Admin Only -->
+    {% if participant.role == 'admin' %}
+    <section class="dashboard-card end-game-card">
+        <h2>🏁 End Game</h2>
+        <p>When the board game is over, enter the final results below to determine the trading game winner.</p>
+        
+        <div class="end-game-form">
+            {% if game.scoring_mode == 'outright_winner' %}
+                <label for="winning-player">Select the winning player:</label>
+                <select id="winning-player">
+                    {% for player in player_names %}
+                    <option value="{{ player }}">{{ player }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-danger" onclick="endGameOutright()">End Game & Declare Winner</button>
+                
+            {% elif game.scoring_mode == 'final_points' %}
+                <label>Enter final scores for each player:</label>
+                <div id="final-scores-container" style="display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0;">
+                    {% for player in player_names %}
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <label style="min-width: 150px; font-weight: 600;">{{ player }}:</label>
+                        <input type="number" id="score-{{ loop.index }}" data-player="{{ player }}" 
+                               min="0" step="0.01" placeholder="Final score" 
+                               style="flex: 1; padding: 0.5rem; border: 2px solid var(--border-color); border-radius: 0.5rem;">
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="btn btn-danger" onclick="endGameFinalPoints()">End Game & Calculate Winner</button>
+                
+            {% elif game.scoring_mode == 'top_positions' %}
+                <label>Enter finishing positions for each player:</label>
+                <div id="final-positions-container" style="display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0;">
+                    {% for player in player_names %}
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <label style="min-width: 150px; font-weight: 600;">{{ player }}:</label>
+                        <select id="position-{{ loop.index }}" data-player="{{ player }}" 
+                                style="flex: 1; padding: 0.5rem; border: 2px solid var(--border-color); border-radius: 0.5rem;">
+                            {% for i in range(1, player_names|length + 1) %}
+                            <option value="{{ i }}">{{ i }}{{ 'st' if i == 1 else ('nd' if i == 2 else ('rd' if i == 3 else 'th')) }} Place</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="btn btn-danger" onclick="endGameTopPositions()">End Game & Calculate Winner</button>
+            {% endif %}
+        </div>
+    </section>
+    {% endif %}
+    
+    <!-- Game Rules Display - All Participants -->
+    <section class="dashboard-card game-rules-card">
+        <h2>📋 Game Rules</h2>
+        <div class="game-rules">
+            <div class="rule-item">
+                <strong>Scoring Mode:</strong>
+                {% if game.scoring_mode == 'outright_winner' %}
+                    <span>Outright Winner - The trader with the most shares in the winning player wins</span>
+                {% elif game.scoring_mode == 'final_points' %}
+                    <span>Final Points - Each share is worth the player's final score{{ ' (includes cash)' if game.include_cash else '' }}</span>
+                {% elif game.scoring_mode == 'top_positions' %}
+                    <span>Top Positions - Shares are worth their player's finishing position value{{ ' (includes cash)' if game.include_cash else '' }}</span>
+                {% endif %}
+            </div>
+            
+            {% if game.scoring_mode == 'top_positions' %}
+            <div class="rule-item">
+                <strong>Position Values:</strong>
+                <ul style="margin: 0.5rem 0 0 1.5rem;">
+                    {% set position_values = game.position_values|from_json %}
+                    {% for i in range(1, player_names|length + 1) %}
+                    <li>{{ i }}{{ 'st' if i == 1 else ('nd' if i == 2 else ('rd' if i == 3 else 'th')) }} Place: ${{ position_values[i|string] }} per share</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if game.include_cash and game.scoring_mode != 'outright_winner' %}
+            <div class="rule-item">
+                <strong>Cash:</strong>
+                <span>Remaining cash is included in final score calculation</span>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    </div>
+    <!-- End Trading View -->
+    
+    <!-- Analytics View -->
+    <div class="main-tab-content analytics-full-width" id="analytics-view">
+        <h2>📊 Market Analytics</h2>
+        
+        <!-- Market Overview Stats -->
+        <section class="dashboard-card analytics-card-full">
+            <h3>Market Overview</h3>
+            <div class="market-stats">
+                <div class="market-stat">
+                    <span class="market-stat-label">Total Trades:</span>
+                    <span class="market-stat-value" id="total-trades">-</span>
+                </div>
+                <div class="market-stat">
+                    <span class="market-stat-label">Market Volume:</span>
+                    <span class="market-stat-value" id="market-volume">-</span>
+                </div>
+                <div class="market-stat">
+                    <span class="market-stat-label">Active Players:</span>
+                    <span class="market-stat-value" id="active-players">-</span>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Combined Price Chart -->
+        <section class="dashboard-card analytics-card-full">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0;">All Players - Price History</h3>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary);">X-Axis:</label>
+                        <select id="chart-xaxis" class="chart-control" onchange="updateChartXAxis()">
+                            <option value="trades">Trade Number</option>
+                            <option value="time">Time</option>
+                        </select>
+                    </div>
+                    <div id="time-period-container" style="display: none; gap: 0.5rem; align-items: center;">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary);">Time Period:</label>
+                        <select id="chart-time-period" class="chart-control" onchange="updateChartPeriod()">
+                            <option value="all">All Time</option>
+                            <option value="1h">Last Hour</option>
+                            <option value="3h">Last 3 Hours</option>
+                            <option value="6h">Last 6 Hours</option>
+                            <option value="12h">Last 12 Hours</option>
+                            <option value="24h">Last 24 Hours</option>
+                            <option value="3d">Last 3 Days</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="14d">Last 2 Weeks</option>
+                            <option value="30d">Last Month</option>
+                            <option value="60d">Last 2 Months</option>
+                            <option value="90d">Last 3 Months</option>
+                        </select>
+                    </div>
+                    <div id="trade-period-container" style="display: flex; gap: 0.5rem; align-items: center;">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary);">Trade Period:</label>
+                        <select id="chart-trade-period" class="chart-control" onchange="updateChartPeriod()">
+                            <option value="all">All Trades</option>
+                            <option value="10">Last 10 Trades</option>
+                            <option value="20">Last 20 Trades</option>
+                            <option value="50">Last 50 Trades</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary);">Player:</label>
+                        <select id="chart-player" class="chart-control" onchange="updateChartPlayer()">
+                            <option value="all">All Players</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-container" style="height: 500px;">
+                <canvas id="priceChart"></canvas>
+            </div>
+        </section>
+        
+        <!-- Combined Volume Chart -->
+        <section class="dashboard-card analytics-card-full">
+            <h3>All Players - Trading Volume</h3>
+            <div class="chart-container" style="height: 400px;">
+                <canvas id="volumeChart"></canvas>
+            </div>
+        </section>
+    </div>
+    <!-- End Analytics View -->
+    
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let metricsData = null;
+let priceChart = null;
+let volumeChart = null;
+let currentHoldings = {};
+const TOKEN = '{{ participant.access_token }}';
+
+// ============ Refresh Trading Data ============
+
+async function refreshTradingData() {
+    try {
+        const response = await fetch(`/api/game-state/${TOKEN}`);
+        const data = await response.json();
+        
+        // Update cash balance
+        document.getElementById('cash-value').textContent = `$${data.cash.toFixed(2)}`;
+        
+        // Update holdings
+        const holdingsBody = document.getElementById('holdings-body');
+        holdingsBody.innerHTML = '';
+        currentHoldings = data.holdings; // Store holdings globally
+        data.player_names.forEach(player => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${player}</td>
+                <td>${data.holdings[player] || 0}</td>
+            `;
+            holdingsBody.appendChild(row);
+        });
+        
+        // Update player dropdown based on current order type
+        updatePlayerDropdown();
+        
+        // Store orders globally for filtering
+        window.buyOrders = data.buy_orders;
+        window.sellOrders = data.sell_orders;
+        
+        // Populate player filter dropdowns
+        populatePlayerFilters(data.player_names);
+        
+        // Apply current filters
+        filterOrders('buy');
+        filterOrders('sell');
+        
+        // Store transactions globally for filtering
+        window.allTransactions = data.recent_transactions;
+        
+        // Update transactions based on current filter
+        const currentFilter = document.querySelector('.filter-btn.active')?.dataset.filter || 'all';
+        updateTransactionsDisplay(currentFilter);
+        
+        // Reload analytics if on that tab
+        if (document.getElementById('analytics-view') && document.getElementById('analytics-view').classList.contains('active')) {
+            await loadMetrics();
+        }
+        
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+    }
+}
+
+// Filter and update transactions display
+function filterTransactions(filter) {
+    // Update active button
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+    
+    updateTransactionsDisplay(filter);
+}
+
+// Populate player filter dropdowns
+function populatePlayerFilters(playerNames) {
+    const buyFilter = document.getElementById('buy-player-filter');
+    const sellFilter = document.getElementById('sell-player-filter');
+    
+    // Clear existing options (except "All Players")
+    buyFilter.innerHTML = '<option value="">All Players</option>';
+    sellFilter.innerHTML = '<option value="">All Players</option>';
+    
+    // Add player options
+    playerNames.forEach(player => {
+        buyFilter.innerHTML += `<option value="${player}">${player}</option>`;
+        sellFilter.innerHTML += `<option value="${player}">${player}</option>`;
+    });
+}
+
+// Filter and sort orders by player and price
+function filterOrders(orderType) {
+    const filterId = orderType === 'buy' ? 'buy-player-filter' : 'sell-player-filter';
+    const bodyId = orderType === 'buy' ? 'buy-orders-body' : 'sell-orders-body';
+    const ordersData = orderType === 'buy' ? window.buyOrders : window.sellOrders;
+    
+    if (!ordersData) return;
+    
+    const selectedPlayer = document.getElementById(filterId).value;
+    const ordersBody = document.getElementById(bodyId);
+    ordersBody.innerHTML = '';
+    
+    // Filter orders
+    let filteredOrders = ordersData;
+    if (selectedPlayer) {
+        filteredOrders = ordersData.filter(order => order.player_name === selectedPlayer);
+    }
+    
+    // Sort by price - buy orders descending (highest first), sell orders ascending (lowest first)
+    filteredOrders.sort((a, b) => {
+        return orderType === 'buy' ? b.price - a.price : a.price - b.price;
+    });
+    
+    // Render orders
+    filteredOrders.forEach(order => {
+        const row = document.createElement('tr');
+        
+        if (orderType === 'buy') {
+            const canFulfill = !order.is_mine && (currentHoldings[order.player_name] || 0) > 0;
+            row.className = order.is_mine ? 'my-order' : (canFulfill ? '' : 'disabled-order');
+            row.innerHTML = `
+                <td>${order.player_name}</td>
+                <td>${order.shares}</td>
+                <td>$${order.price.toFixed(2)}</td>
+                <td>$${(order.price * order.shares).toFixed(2)}</td>
+                <td>
+                    ${order.is_mine 
+                        ? `<button class="btn btn-small btn-cancel" onclick="cancelOrder(${order.id})">Cancel</button>`
+                        : (canFulfill 
+                            ? `<button class="btn btn-small btn-execute" onclick="executeOrderPrompt(${order.id}, ${order.shares}, ${order.price}, '${order.player_name}', 'sell')">Sell to Buyer</button>`
+                            : `<button class="btn btn-small" disabled style="opacity: 0.5; cursor: not-allowed;">No Shares</button>`
+                        )
+                    }
+                </td>
+            `;
+        } else {
+            row.className = order.is_mine ? 'my-order' : '';
+            row.innerHTML = `
+                <td>${order.player_name}</td>
+                <td>${order.shares}</td>
+                <td>$${order.price.toFixed(2)}</td>
+                <td>$${(order.price * order.shares).toFixed(2)}</td>
+                <td>
+                    ${order.is_mine 
+                        ? `<button class="btn btn-small btn-cancel" onclick="cancelOrder(${order.id})">Cancel</button>`
+                        : `<button class="btn btn-small btn-execute" onclick="executeOrderPrompt(${order.id}, ${order.shares}, ${order.price}, '${order.player_name}', 'buy')">Buy from Seller</button>`
+                    }
+                </td>
+            `;
+        }
+        
+        ordersBody.appendChild(row);
+    });
+}
+
+// Filter and update transactions display
+function filterTransactions(filter) {
+    // Update active button
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+    
+    updateTransactionsDisplay(filter);
+}
+
+function updateTransactionsDisplay(filter) {
+    const transactionsBody = document.getElementById('transactions-body');
+    const typeHeader = document.getElementById('transaction-type-header');
+    
+    if (!window.allTransactions) return;
+    
+    transactionsBody.innerHTML = '';
+    
+    // Show/hide Type column based on filter
+    typeHeader.style.display = filter === 'my' ? '' : 'none';
+    
+    const filteredTransactions = filter === 'my' 
+        ? window.allTransactions.filter(tx => tx.is_mine)
+        : window.allTransactions;
+    
+    filteredTransactions.forEach(tx => {
+        const row = document.createElement('tr');
+        const typeCell = filter === 'my' 
+            ? `<td><span class="transaction-type ${tx.type}">${tx.type === 'buy' ? 'Buy' : 'Sell'}</span></td>`
+            : '';
+        
+        // Format timestamp
+        const timestamp = new Date(tx.timestamp);
+        const timeStr = timestamp.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit',
+            hour12: false 
+        });
+        
+        row.innerHTML = `
+            <td>${timeStr}</td>
+            <td>${tx.player_name}</td>
+            <td>${tx.shares}</td>
+            <td>$${tx.price.toFixed(2)}</td>
+            <td>$${(tx.price * tx.shares).toFixed(2)}</td>
+            ${typeCell}
+        `;
+        transactionsBody.appendChild(row);
+    });
+    
+    if (filteredTransactions.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="${filter === 'my' ? 6 : 5}" style="text-align: center; color: #9ca3af; padding: 2rem;">No transactions yet</td>`;
+        transactionsBody.appendChild(row);
+    }
+}
+
+// Update player dropdown based on order type
+function updatePlayerDropdown() {
+    const orderType = document.getElementById('order-type').value;
+    const playerSelect = document.getElementById('order-player');
+    const allPlayers = {{ player_names | tojson }};
+    
+    // Clear current options
+    playerSelect.innerHTML = '';
+    
+    if (orderType === 'sell') {
+        // For sell orders, only show players where user has shares
+        let hasOptions = false;
+        allPlayers.forEach(player => {
+            if (currentHoldings[player] && currentHoldings[player] > 0) {
+                const option = document.createElement('option');
+                option.value = player;
+                option.textContent = `${player} (${currentHoldings[player]} shares)`;
+                playerSelect.appendChild(option);
+                hasOptions = true;
+            }
+        });
+        
+        if (!hasOptions) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No shares available to sell';
+            option.disabled = true;
+            playerSelect.appendChild(option);
+        }
+    } else {
+        // For buy orders, show all players
+        allPlayers.forEach(player => {
+            const option = document.createElement('option');
+            option.value = player;
+            option.textContent = player;
+            playerSelect.appendChild(option);
+        });
+    }
+}
+
+// Initialize everything when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Main navigation tab switching
+    document.querySelectorAll('.main-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.main-tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.tab).classList.add('active');
+            
+            // Load analytics data when switching to analytics view
+            if (btn.dataset.tab === 'analytics-view') {
+                loadMetrics();
+            }
+        });
+    });
+
+    // Tab switching (for market orders)
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.tab).classList.add('active');
+        });
+    });
+    
+    // Order type change listener
+    const orderTypeSelect = document.getElementById('order-type');
+    if (orderTypeSelect) {
+        orderTypeSelect.addEventListener('change', updatePlayerDropdown);
+    }
+
+    // Order form calculation
+    const sharesInput = document.getElementById('order-shares');
+    const priceInput = document.getElementById('order-price');
+    const totalSpan = document.getElementById('order-total');
+
+    if (sharesInput && priceInput && totalSpan) {
+        function updateTotal() {
+            const shares = parseFloat(sharesInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            totalSpan.textContent = (shares * price).toFixed(2);
+        }
+
+        sharesInput.addEventListener('input', updateTotal);
+        priceInput.addEventListener('input', updateTotal);
+    }
+
+    // Place order form submission
+    const orderForm = document.getElementById('order-form');
+    console.log('Order form found:', orderForm);
+    
+    if (orderForm) {
+        orderForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            console.log('Form submitted!');
+            
+            try {
+                const response = await fetch('/api/place-order', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        token: TOKEN,
+                        order_type: document.getElementById('order-type').value,
+                        player_name: document.getElementById('order-player').value,
+                        shares: parseInt(document.getElementById('order-shares').value),
+                        price: parseFloat(document.getElementById('order-price').value)
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                const messageEl = document.getElementById('order-message');
+                
+                if (data.success) {
+                    messageEl.textContent = 'Order placed successfully!';
+                    messageEl.className = 'message success';
+                    await refreshTradingData();
+                    // Only reset shares and price, keep dropdowns
+                    document.getElementById('order-shares').value = 1;
+                    document.getElementById('order-price').value = 10.00;
+                    document.getElementById('order-total').textContent = '10.00';
+                    setTimeout(() => {
+                        messageEl.textContent = '';
+                        messageEl.className = 'message';
+                    }, 3000);
+                } else {
+                    messageEl.textContent = data.error || 'Failed to place order';
+                    messageEl.className = 'message error';
+                }
+            } catch (error) {
+                console.error('Error placing order:', error);
+                const messageEl = document.getElementById('order-message');
+                messageEl.textContent = 'Error: ' + error.message;
+                messageEl.className = 'message error';
+            }
+        });
+    } else {
+        console.error('Order form not found!');
+    }
+
+    // Initial load
+    refreshTradingData();
+});
+
+// Execute order with prompt for partial fills
+async function executeOrderPrompt(orderId, maxShares, price, playerName, action) {
+    const actionText = action === 'buy' ? 'buy from seller' : 'sell to buyer';
+    const shares = prompt(`How many shares do you want to ${actionText}? (max ${maxShares} at $${price.toFixed(2)} each)\n\nTotal cost for all ${maxShares}: $${(maxShares * price).toFixed(2)}`, maxShares);
+    
+    if (shares === null) return; // Cancelled
+    
+    const sharesToExecute = parseInt(shares);
+    
+    if (isNaN(sharesToExecute) || sharesToExecute <= 0) {
+        alert('Please enter a valid number of shares');
+        return;
+    }
+    
+    if (sharesToExecute > maxShares) {
+        alert(`Cannot execute more than ${maxShares} shares`);
+        return;
+    }
+    
+    const totalCost = sharesToExecute * price;
+    if (!confirm(`${action === 'buy' ? 'Buy' : 'Sell'} ${sharesToExecute} shares of ${playerName} at $${price.toFixed(2)} each for a total of $${totalCost.toFixed(2)}?`)) {
+        return;
+    }
+    
+    await executeOrder(orderId, sharesToExecute);
+}
+
+// Execute order
+async function executeOrder(orderId, shares = null) {
+    const body = {
+        token: TOKEN,
+        order_id: orderId
+    };
+    
+    if (shares !== null) {
+        body.shares = shares;
+    }
+    
+    const response = await fetch('/api/execute-order', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        alert('Order executed successfully!');
+        await refreshTradingData();
+    } else {
+        alert(data.error || 'Failed to execute order');
+    }
+}
+
+// Cancel order
+async function cancelOrder(orderId) {
+    if (!confirm('Are you sure you want to cancel this order?')) return;
+    
+    const response = await fetch('/api/cancel-order', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            token: TOKEN,
+            order_id: orderId
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        alert('Order cancelled');
+        await refreshTradingData();
+    } else {
+        alert(data.error || 'Failed to cancel order');
+    }
+}
+
+// Cancel all orders of a specific type
+async function cancelAllOrders(orderType) {
+    if (!confirm(`Are you sure you want to cancel all your ${orderType} orders?`)) return;
+    
+    const response = await fetch('/api/cancel-all-orders', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            token: TOKEN,
+            order_type: orderType
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        alert(`${data.cancelled_count} order(s) cancelled`);
+        await refreshTradingData();
+    } else {
+        alert(data.error || 'Failed to cancel orders');
+    }
+}
+
+// End game functions for different scoring modes
+async function endGameOutright() {
+    const winningPlayer = document.getElementById('winning-player').value;
+    
+    if (!confirm(`Are you sure you want to end the game? The winning player is ${winningPlayer}. This cannot be undone!`)) return;
+    
+    const response = await fetch('/api/end-game', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            token: TOKEN,
+            winning_player: winningPlayer
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        window.location.href = data.redirect;
+    } else {
+        alert(data.error || 'Failed to end game');
+    }
+}
+
+async function endGameFinalPoints() {
+    const finalScores = {};
+    let allFilled = true;
+    
+    document.querySelectorAll('#final-scores-container input').forEach(input => {
+        const player = input.dataset.player;
+        const score = input.value;
+        if (!score) {
+            allFilled = false;
+        }
+        finalScores[player] = parseFloat(score) || 0;
+    });
+    
+    if (!allFilled) {
+        alert('Please enter final scores for all players');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to end the game with these scores? This cannot be undone!')) return;
+    
+    const response = await fetch('/api/end-game', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            token: TOKEN,
+            final_scores: finalScores
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        window.location.href = data.redirect;
+    } else {
+        alert(data.error || 'Failed to end game');
+    }
+}
+
+async function endGameTopPositions() {
+    const finalPositions = {};
+    const usedPositions = new Set();
+    
+    document.querySelectorAll('#final-positions-container select').forEach(select => {
+        const player = select.dataset.player;
+        const position = select.value;
+        finalPositions[player] = parseInt(position);
+        usedPositions.add(position);
+    });
+    
+    // Check for duplicate positions
+    if (usedPositions.size !== Object.keys(finalPositions).length) {
+        alert('Each player must have a unique position');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to end the game with these positions? This cannot be undone!')) return;
+    
+    const response = await fetch('/api/end-game', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            token: TOKEN,
+            final_positions: finalPositions
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+        window.location.href = data.redirect;
+    } else {
+        alert(data.error || 'Failed to end game');
+    }
+}
+
+// Auto-refresh every 15 seconds
+setInterval(refreshTradingData, 15000);
+
+// ============ Analytics Functions ============
+
+let chartSettings = {
+    player: 'all',
+    period: 'all',
+    xaxis: 'trades'
+};
+
+async function loadMetrics() {
+    try {
+        const response = await fetch(`/api/market-metrics/${TOKEN}`);
+        const data = await response.json();
+        metricsData = data;
+        
+        // Update market overview
+        document.getElementById('total-trades').textContent = data.market_overview.total_trades;
+        document.getElementById('market-volume').textContent = data.market_overview.total_volume;
+        document.getElementById('active-players').textContent = data.market_overview.active_players;
+        
+        // Populate player dropdown
+        const playerSelect = document.getElementById('chart-player');
+        playerSelect.innerHTML = '<option value="all">All Players</option>';
+        // Sort player names alphabetically for consistent ordering
+        Object.keys(data.metrics).sort().forEach(playerName => {
+            playerSelect.innerHTML += `<option value="${playerName}">${playerName}</option>`;
+        });
+        
+        // Update charts
+        updateCharts();
+    } catch (error) {
+        console.error('Error loading metrics:', error);
+    }
+}
+
+function updateChartPlayer() {
+    chartSettings.player = document.getElementById('chart-player').value;
+    updatePriceChart();
+}
+
+function updateChartXAxis() {
+    chartSettings.xaxis = document.getElementById('chart-xaxis').value;
+    
+    // Toggle period selector visibility
+    const timePeriodContainer = document.getElementById('time-period-container');
+    const tradePeriodContainer = document.getElementById('trade-period-container');
+    
+    if (chartSettings.xaxis === 'time') {
+        timePeriodContainer.style.display = 'flex';
+        tradePeriodContainer.style.display = 'none';
+        chartSettings.period = document.getElementById('chart-time-period').value;
+    } else {
+        timePeriodContainer.style.display = 'none';
+        tradePeriodContainer.style.display = 'flex';
+        chartSettings.period = document.getElementById('chart-trade-period').value;
+    }
+    
+    updatePriceChart();
+}
+
+function updateChartPeriod() {
+    if (chartSettings.xaxis === 'time') {
+        chartSettings.period = document.getElementById('chart-time-period').value;
+    } else {
+        chartSettings.period = document.getElementById('chart-trade-period').value;
+    }
+    updatePriceChart();
+}
+
+function updateCharts() {
+    if (!metricsData) return;
+    
+    console.log('Metrics data:', metricsData);
+    updatePriceChart();
+    updateVolumeChart();
+}
+
+function updatePriceChart() {
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    
+    if (priceChart) {
+        priceChart.destroy();
+    }
+    
+    // Generate colors for each player
+    const colors = [
+        '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#7c3aed',
+        '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669'
+    ];
+    
+    // Filter data based on settings
+    const selectedPlayers = chartSettings.player === 'all' 
+        ? Object.keys(metricsData.metrics)
+        : [chartSettings.player];
+    
+    // Calculate rolling average
+    function calculateRollingAverage(data, windowSize = 5) {
+        const result = [];
+        for (let i = 0; i < data.length; i++) {
+            const start = Math.max(0, i - windowSize + 1);
+            const window = data.slice(start, i + 1);
+            const avg = window.reduce((sum, val) => sum + val, 0) / window.length;
+            result.push(avg);
+        }
+        return result;
+    }
+    
+    const datasets = [];
+    let commonLabels = [];
+    
+    selectedPlayers.forEach((playerName, index) => {
+        const playerMetrics = metricsData.metrics[playerName];
+        
+        if (playerMetrics.price_history && playerMetrics.price_history.length > 0) {
+            let history = playerMetrics.price_history;
+            
+            // Apply period filter
+            if (chartSettings.period !== 'all') {
+                if (chartSettings.xaxis === 'time') {
+                    // Time-based filtering
+                    const now = new Date();
+                    const cutoffTime = new Date();
+                    
+                    switch(chartSettings.period) {
+                        case '1h':
+                            cutoffTime.setHours(now.getHours() - 1);
+                            break;
+                        case '3h':
+                            cutoffTime.setHours(now.getHours() - 3);
+                            break;
+                        case '6h':
+                            cutoffTime.setHours(now.getHours() - 6);
+                            break;
+                        case '12h':
+                            cutoffTime.setHours(now.getHours() - 12);
+                            break;
+                        case '24h':
+                            cutoffTime.setHours(now.getHours() - 24);
+                            break;
+                        case '3d':
+                            cutoffTime.setDate(now.getDate() - 3);
+                            break;
+                        case '7d':
+                            cutoffTime.setDate(now.getDate() - 7);
+                            break;
+                        case '14d':
+                            cutoffTime.setDate(now.getDate() - 14);
+                            break;
+                        case '30d':
+                            cutoffTime.setDate(now.getDate() - 30);
+                            break;
+                        case '60d':
+                            cutoffTime.setDate(now.getDate() - 60);
+                            break;
+                        case '90d':
+                            cutoffTime.setDate(now.getDate() - 90);
+                            break;
+                    }
+                    
+                    history = history.filter(p => new Date(p.timestamp) >= cutoffTime);
+                } else {
+                    // Trade count filtering
+                    const limit = parseInt(chartSettings.period);
+                    history = history.slice(-limit);
+                }
+            }
+            
+            const prices = history.map(p => p.price);
+            const rollingAvg = calculateRollingAverage(prices);
+            
+            // Scatter data for actual prices
+            const scatterData = history.map((p, idx) => {
+                if (chartSettings.xaxis === 'time') {
+                    return {
+                        x: new Date(p.timestamp).getTime(),
+                        y: p.price
+                    };
+                } else {
+                    return {
+                        x: idx,
+                        y: p.price
+                    };
+                }
+            });
+            
+            // Line data for rolling average
+            const lineData = history.map((p, idx) => {
+                if (chartSettings.xaxis === 'time') {
+                    return {
+                        x: new Date(p.timestamp).getTime(),
+                        y: rollingAvg[idx]
+                    };
+                } else {
+                    return {
+                        x: idx,
+                        y: rollingAvg[idx]
+                    };
+                }
+            });
+            
+            // Add scatter dataset
+            datasets.push({
+                label: playerName + ' (Prices)',
+                data: scatterData,
+                type: 'scatter',
+                backgroundColor: colors[index % colors.length],
+                borderColor: colors[index % colors.length],
+                pointRadius: 4,
+                pointHoverRadius: 6,
+            });
+            
+            // Add rolling average line
+            datasets.push({
+                label: playerName + ' (Avg)',
+                data: lineData,
+                type: 'line',
+                borderColor: colors[index % colors.length],
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 0,
+                borderDash: [5, 5],
+                tension: 0.4,
+            });
+            
+            if (commonLabels.length === 0) {
+                commonLabels = history.map(p => 
+                    new Date(p.timestamp).toLocaleTimeString()
+                );
+            }
+        }
+    });
+    
+    if (datasets.length === 0) {
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'center';
+        ctx.fillText('No price data yet - complete some trades to see charts', ctx.canvas.width / 2, ctx.canvas.height / 2);
+        return;
+    }
+    
+    priceChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            labels: commonLabels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15,
+                        font: { size: 12, weight: '600' }
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: chartSettings.xaxis === 'time' ? {
+                    type: 'time',
+                    time: {
+                        unit: (() => {
+                            const period = chartSettings.period;
+                            if (period === '1h' || period === '3h' || period === '6h') return 'minute';
+                            if (period === '12h' || period === '24h') return 'hour';
+                            if (period === '3d' || period === '7d') return 'day';
+                            if (period === '14d' || period === '30d' || period === '60d' || period === '90d') return 'day';
+                            return 'minute';
+                        })(),
+                        displayFormats: {
+                            minute: 'HH:mm',
+                            hour: 'HH:mm',
+                            day: 'MMM d'
+                        }
+                    },
+                    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    ticks: {
+                        maxRotation: 45,
+                        font: { size: 11 }
+                    }
+                } : {
+                    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0,
+                        font: { size: 11 }
+                    }
+                },
+                y: {
+                    position: 'right',
+                    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toFixed(2);
+                        },
+                        font: { size: 11 }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateVolumeChart() {
+    const ctx = document.getElementById('volumeChart').getContext('2d');
+    
+    if (volumeChart) {
+        volumeChart.destroy();
+    }
+    
+    // Generate colors for each player
+    const colors = [
+        '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#7c3aed',
+        '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669'
+    ];
+    
+    const datasets = [];
+    let commonLabels = [];
+    
+    // Create a dataset for each player
+    Object.keys(metricsData.metrics).forEach((playerName, index) => {
+        const playerMetrics = metricsData.metrics[playerName];
+        
+        console.log(`Player ${playerName} volume history:`, playerMetrics.volume_history);
+        
+        if (playerMetrics.volume_history && playerMetrics.volume_history.length > 0) {
+            const volumes = playerMetrics.volume_history.map(v => v.volume);
+            
+            datasets.push({
+                label: playerName,
+                data: volumes,
+                backgroundColor: colors[index % colors.length] + 'B0',
+                borderColor: colors[index % colors.length],
+                borderWidth: 1
+            });
+            
+            // Use timestamps from first player as labels
+            if (commonLabels.length === 0) {
+                commonLabels = playerMetrics.volume_history.map(v => 
+                    new Date(v.timestamp).toLocaleString()
+                );
+            }
+        }
+    });
+    
+    console.log('Volume chart datasets:', datasets);
+    
+    // If no data, show message
+    if (datasets.length === 0) {
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'center';
+        ctx.fillText('No volume data yet - complete some trades to see charts', ctx.canvas.width / 2, ctx.canvas.height / 2);
+        return;
+    }
+    
+    volumeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: commonLabels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15,
+                        font: {
+                            size: 12,
+                            weight: '600'
+                        }
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: {
+                        size: 14,
+                        weight: 'bold'
+                    },
+                    bodyFont: {
+                        size: 13
+                    }
+                },
+                zoom: {
+                    zoom: {
+                        wheel: {
+                            enabled: true,
+                            speed: 0.1
+                        },
+                        pinch: {
+                            enabled: true
+                        },
+                        mode: 'x',
+                    },
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                        modifierKey: 'shift',
+                    },
+                    limits: {
+                        x: {min: 'original', max: 'original'},
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: false,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)',
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0,
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    position: 'right',
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)',
+                    },
+                    ticks: {
+                        stepSize: 1,
+                        font: {
+                            size: 11
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

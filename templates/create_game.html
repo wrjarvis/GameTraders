@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Create New Game - Game Day Traders{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h1>Create New Game</h1>
+    <p class="form-intro">Set up your trading game alongside your board game session.</p>
+    
+    {% if error %}
+    <div class="alert alert-error">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    <form method="POST" action="{{ url_for('create_game') }}" class="game-form">
+        <div class="form-section">
+            <h2>Game Settings</h2>
+            
+            <div class="form-group">
+                <label for="game_name">Game Name</label>
+                <input type="text" id="game_name" name="game_name" placeholder="e.g., Friday Night Catan" value="{{ request.form.get('game_name', '') }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="player_names">Tradeable Players (comma-separated)</label>
+                <input type="text" id="player_names" name="player_names" placeholder="e.g., Alice, Bob, Charlie, Diana" value="{{ request.form.get('player_names', '') }}" required>
+                <small>Enter the names of the board game players whose stocks can be traded</small>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <h2>Participants</h2>
+            
+            <div class="form-group">
+                <label for="num_players">Number of Traders (Players)</label>
+                <input type="number" id="num_players" name="num_players" min="1" max="20" value="4" required>
+                <small>Active traders who can buy and sell</small>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <h2>Initial Distribution</h2>
+            
+            <div class="form-group">
+                <label>Distribution Mode</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="distribution_mode" value="even" checked onchange="updateDistributionFields()">
+                        <span class="radio-text">
+                            <strong>Even Distribution</strong>
+                            <small>Everyone starts with cash and shares in all players</small>
+                        </span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="distribution_mode" value="own_shares" onchange="updateDistributionFields()">
+                        <span class="radio-text">
+                            <strong>Own Shares Only</strong>
+                            <small>Players start with only their own shares (no cash). Viewers start with cash only (no shares).</small>
+                        </span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="form-row" id="even-distribution-fields">
+                <div class="form-group">
+                    <label for="initial_cash">Starting Cash (All Participants)</label>
+                    <input type="number" id="initial_cash" name="initial_cash" min="0" step="0.01" value="1000">
+                    <small>Amount of cash everyone starts with</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="initial_shares">Starting Shares (All Players)</label>
+                    <input type="number" id="initial_shares" name="initial_shares" min="0" value="10">
+                    <small>Shares everyone gets in each tradeable player</small>
+                </div>
+            </div>
+            
+            <div id="own-shares-fields" style="display: none;">
+                <div class="form-group">
+                    <label for="own_shares_amount">Starting Shares (own player only)</label>
+                    <input type="number" id="own_shares_amount" name="own_shares_amount" min="1" value="100">
+                    <small>Shares each player starts with in themselves</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="player_cash">Player Starting Cash</label>
+                    <input type="number" id="player_cash" name="player_cash" min="0" step="0.01" value="1000">
+                    <small>Cash each player starts with</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <h2>Game Ending & Scoring Rules</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">Choose how the winner will be determined when the game ends. These rules cannot be changed after game creation.</p>
+            
+            <div class="form-group">
+                <label>Scoring Mode</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="scoring_mode" value="outright_winner" checked onchange="updateScoringFields()">
+                        <span class="radio-text">
+                            <strong>Outright Winner</strong>
+                            <small>One player wins the board game. The trader with the most shares in that player wins.</small>
+                        </span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="scoring_mode" value="final_points" onchange="updateScoringFields()">
+                        <span class="radio-text">
+                            <strong>Final Points</strong>
+                            <small>Each share is worth the player's final score. Highest total value wins.</small>
+                        </span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="scoring_mode" value="top_positions" onchange="updateScoringFields()">
+                        <span class="radio-text">
+                            <strong>Top Positions</strong>
+                            <small>Each finishing position has a set value (e.g., 1st=$10, 2nd=$5). Shares are worth their player's position value.</small>
+                        </span>
+                    </label>
+                </div>
+            </div>
+            
+            <div id="include-cash-field" style="display: none;">
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" name="include_cash" value="true" style="width: auto;">
+                        <span>Include cash in final score</span>
+                    </label>
+                    <small>If checked, remaining cash is added to share values when calculating winner</small>
+                </div>
+            </div>
+            
+            <div id="position-values-field" style="display: none;">
+                <div class="form-group">
+                    <label>Position Values</label>
+                    <div id="position-values-container" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <!-- Dynamically populated based on number of players -->
+                    </div>
+                    <small>Set the dollar value for each finishing position</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large">
+                <span class="btn-icon">🚀</span>
+                Create Game
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+function updateDistributionFields() {
+    const mode = document.querySelector('input[name="distribution_mode"]:checked').value;
+    const evenFields = document.getElementById('even-distribution-fields');
+    const ownSharesFields = document.getElementById('own-shares-fields');
+    
+    if (mode === 'even') {
+        evenFields.style.display = 'grid';
+        ownSharesFields.style.display = 'none';
+        // Enable even distribution fields
+        document.getElementById('initial_cash').disabled = false;
+        document.getElementById('initial_shares').disabled = false;
+        // Disable own shares fields
+        document.getElementById('own_shares_amount').disabled = true;
+        document.getElementById('player_cash').disabled = true;
+    } else {
+        evenFields.style.display = 'none';
+        ownSharesFields.style.display = 'block';
+        // Disable even distribution fields
+        document.getElementById('initial_cash').disabled = true;
+        document.getElementById('initial_shares').disabled = true;
+        // Enable own shares fields
+        document.getElementById('own_shares_amount').disabled = false;
+        document.getElementById('player_cash').disabled = false;
+    }
+}
+
+function updateScoringFields() {
+    const mode = document.querySelector('input[name="scoring_mode"]:checked').value;
+    const includeCashField = document.getElementById('include-cash-field');
+    const positionValuesField = document.getElementById('position-values-field');
+    
+    if (mode === 'outright_winner') {
+        includeCashField.style.display = 'none';
+        positionValuesField.style.display = 'none';
+    } else if (mode === 'final_points') {
+        includeCashField.style.display = 'block';
+        positionValuesField.style.display = 'none';
+    } else if (mode === 'top_positions') {
+        includeCashField.style.display = 'block';
+        positionValuesField.style.display = 'block';
+        updatePositionValuesInputs();
+    }
+}
+
+function updatePositionValuesInputs() {
+    const playerNamesInput = document.getElementById('player_names').value;
+    const playerNames = playerNamesInput.split(',').map(p => p.trim()).filter(p => p);
+    const numPlayers = playerNames.length;
+    const container = document.getElementById('position-values-container');
+    
+    container.innerHTML = '';
+    
+    if (numPlayers === 0) {
+        container.innerHTML = '<p style="color: #9ca3af;">Enter player names first to set position values</p>';
+        return;
+    }
+    
+    for (let i = 1; i <= numPlayers; i++) {
+        const div = document.createElement('div');
+        div.style.cssText = 'display: flex; gap: 1rem; align-items: center;';
+        div.innerHTML = `
+            <label style="min-width: 100px; font-weight: 600;">${getOrdinal(i)} Place:</label>
+            <input type="number" name="position_${i}" min="0" step="0.01" value="${i === 1 ? '10' : i === 2 ? '5' : '0'}" 
+                   style="flex: 1; padding: 0.5rem; border: 2px solid var(--border-color); border-radius: 0.5rem;">
+            <span style="color: var(--text-secondary);">dollars per share</span>
+        `;
+        container.appendChild(div);
+    }
+}
+
+function getOrdinal(n) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// Update position values when player names change
+document.getElementById('player_names').addEventListener('input', function() {
+    const mode = document.querySelector('input[name="scoring_mode"]:checked').value;
+    if (mode === 'top_positions') {
+        updatePositionValuesInputs();
+    }
+});
+
+// Initialize on page load
+updateDistributionFields();
+updateScoringFields();
+
+// Initialize the correct state on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateDistributionFields();
+});
+</script>
+{% endblock %}

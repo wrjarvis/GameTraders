@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Game Results - {{ game.name }}{% endblock %}
+
+{% block content %}
+<div class="results-container">
+    <div class="results-header">
+        <h1>🏆 Game Results</h1>
+        <p class="game-name">{{ game.name }}</p>
+    </div>
+    
+    {% if winner %}
+    <div class="winner-announcement">
+        <div class="trophy">🏆</div>
+        <h2>Winner: {{ winner.name }}!</h2>
+        <p>Congratulations on having the most shares in the winning player!</p>
+    </div>
+    {% endif %}
+    
+    <section class="final-standings">
+        <h2>Final Standings</h2>
+        
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Participant</th>
+                    <th>Role</th>
+                    <th>Cash</th>
+                    {% for player in player_names %}
+                    <th>{{ player }}</th>
+                    {% endfor %}
+                    <th>Total Shares</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in results|sort(attribute='total_shares', reverse=True) %}
+                <tr class="{% if result.participant.id == game.winner_id %}winner-row{% endif %}">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ result.participant.name }}</td>
+                    <td><span class="role-badge role-{{ result.participant.role }}">{{ result.participant.role|title }}</span></td>
+                    <td>${{ "%.2f"|format(result.participant.cash) }}</td>
+                    {% for player in player_names %}
+                    <td>{{ result.holdings.get(player, 0) }}</td>
+                    {% endfor %}
+                    <td><strong>{{ result.total_shares }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    
+    <div class="return-home">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            <span class="btn-icon">🏠</span>
+            Return to Home
+        </a>
+    </div>
+</div>
+{% endblock %}

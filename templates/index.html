@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Game Day Traders - Home{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Welcome to Game Day Traders</h1>
+    <p class="hero-subtitle">Trade stocks in board game players with your friends!</p>
+    
+    <div class="hero-description">
+        <p>Create a trading game alongside your favorite board game. Each player gets shares in the game participants, and you can buy and sell throughout the game. At the end, whoever holds the most shares in the winning player wins!</p>
+    </div>
+    
+    <a href="{{ url_for('create_game') }}" class="btn btn-primary btn-large">
+        Create New Game
+    </a>
+</div>
+
+<section class="features">
+    <h2>How It Works</h2>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🎯</div>
+            <h3>1. Create a Game</h3>
+            <p>Set up the number of players, viewers, and initial distribution of shares and cash.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🔗</div>
+            <h3>2. Share Private Links</h3>
+            <p>Each participant gets a unique private URL to access their trading dashboard.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">💰</div>
+            <h3>3. Trade Anonymously</h3>
+            <p>Buy and sell shares - see the orders but not who placed them!</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🏆</div>
+            <h3>4. Win the Game</h3>
+            <p>When the board game ends, whoever owns the most shares in the winner wins!</p>
+        </div>
+    </div>
+</section>
+{% endblock %}
