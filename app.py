@@ -12,7 +12,19 @@ import json
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gametraders.db'
+
+# Database Configuration
+if os.environ.get('DB_HOST'):
+    # Production (MySQL on PythonAnywhere)
+    db_user = os.environ.get('DB_USER')
+    db_pass = os.environ.get('DB_PASSWORD')
+    db_host = os.environ.get('DB_HOST')
+    db_name = os.environ.get('DB_NAME')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql://{db_user}:{db_pass}@{db_host}/{db_name}'
+else:
+    # Local Development (SQLite)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gametraders.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
